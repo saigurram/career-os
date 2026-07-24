@@ -8,7 +8,7 @@ Career transitions for senior people fail because everything is disconnected. Yo
 
 ## How it works
 
-Two phases. Phase 1 is a 34 week prep mode: Claude API generates a fresh curriculum every week based on 5 live inputs (your skill gaps, target roles, market data, proof of work portfolio, and interview readiness score). Nothing is hardcoded. Every unit adapts as you close gaps.
+Two phases. Phase 1 is a ~48-unit, 10-12 week prep mode (4 units/week) built on a fixed schedule and taxonomy: 48 curriculum units and an 85-concept AI knowledge base across 5 tiers, seeded up front so phase-gating and difficulty progression are structural, not improvised. What's dynamic is everything generated inside that structure: Claude pulls close to 20 live signals per unit (skill scores, target role and level, live job market data, proof-of-work portfolio, banked stories, covered vs. uncovered concepts, prior units already generated) to write that unit's content fresh, and every interview question and every piece of generated content is checked against everything previously generated for that user (lexical overlap plus embedding similarity) so nothing repeats. Every unit adapts as you close gaps.
 
 Phase 2 flips to active search mode: live job feed with fit scoring per listing, application pipeline, AI drafted outreach personalized to each company, interview simulation with real time language analysis, and negotiation coaching with market comp benchmarks.
 

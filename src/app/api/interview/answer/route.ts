@@ -25,6 +25,10 @@ const CURVEBALL_SYSTEM = `${CAREEROS_RULES}
 You are conducting a pressure-mode PM interview. Generate ONE curveball follow-up question that directly challenges the weakest part of the candidate's answer. The question must be confrontational but professional. Respond with just the question text, nothing else.`
 
 export async function POST(request: Request) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 })
+  }
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -16,7 +16,7 @@ import {
   buildSmartRefreshReasons, shouldShowSmartRefreshBanner,
   smartRefreshBannerMessage, getTaskSizeLabel, getTaskSizeTooltip,
 } from '@/lib/curriculum'
-import { extractDomain, buildLinkedInSearchUrl, hasNdaRisk } from '@/lib/claude'
+import { extractDomain, buildLinkedInSearchUrl, hasNdaRisk, isSearchResultsUrl } from '@/lib/claude'
 
 interface Props {
   units: Tables<'curriculum_units'>[]
@@ -320,7 +320,7 @@ export default function CurriculumClient({
           </div>
           <div className="h-8 w-px bg-white/10" />
           <div className="text-center">
-            <p className="text-2xl font-bold text-white">{doneUnits}/34</p>
+            <p className="text-2xl font-bold text-white">{doneUnits}/48</p>
             <p className="text-xs text-muted-foreground">units complete</p>
           </div>
           <div className="h-8 w-px bg-white/10" />
@@ -335,7 +335,7 @@ export default function CurriculumClient({
       <div className="grid grid-cols-3 gap-6">
         {/* Unit map */}
         <div className="col-span-1">
-          <h2 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide">34 Units</h2>
+          <h2 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide">48 Units</h2>
           <div className="space-y-1.5 max-h-[calc(100vh-280px)] overflow-y-auto pr-1">
             {units.map(unit => {
               const status = unitStatus(unit, localProgress)
@@ -540,7 +540,9 @@ export default function CurriculumClient({
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/15 border border-blue-500/25 text-blue-300 text-xs font-medium hover:bg-blue-500/25 transition-colors flex-shrink-0 whitespace-nowrap"
                                   >
                                     <ExternalLink size={11} />
-                                    {selectedContent.learn_resource_url.includes('youtube.com') ? 'Search on YouTube →' : 'Search on Google →'}
+                                    {isSearchResultsUrl(selectedContent.learn_resource_url)
+                                      ? (selectedContent.learn_resource_url.includes('youtube.com') ? 'Search on YouTube →' : 'Search on Google →')
+                                      : (selectedContent.learn_resource_url.includes('youtube.com') ? 'Watch on YouTube →' : `Read on ${extractDomain(selectedContent.learn_resource_url)} →`)}
                                   </a>
                                 </div>
 

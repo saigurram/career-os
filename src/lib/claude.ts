@@ -1,4 +1,37 @@
 import type { BlockedNameEntry } from '@/lib/nda'
+import type Anthropic from '@anthropic-ai/sdk'
+
+// Native Anthropic Messages API tool — no new dependency. Cast loosely since the installed
+// SDK's Tool union may not yet include this literal; bump @anthropic-ai/sdk if this errors.
+export const WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_search', max_uses: 5 } as unknown as Anthropic.Tool
+
+// With the web_search tool enabled, response.content becomes a mixed array of
+// server_tool_use / web_search_tool_result / text blocks, and the final answer is
+// typically the LAST text block, not the first. Use this instead of `content[0]`
+// wherever a call has `tools` configured. Calls without tools are unaffected and
+// don't need this — content[0] is safe there.
+export function extractFinalText(content: Anthropic.Messages.ContentBlock[]): string {
+  const textBlocks = content.filter(
+    (b): b is Anthropic.Messages.TextBlock => b.type === 'text'
+  )
+  return textBlocks.length > 0 ? textBlocks[textBlocks.length - 1].text : '{}'
+}
+
+// A server-tool loop can pause mid-turn (stop_reason: 'pause_turn') if it exceeds internal
+// iteration limits, leaving a trailing server_tool_use block. Resume by replaying the
+// assistant turn as-is — do not append a synthetic "Continue" user message.
+export async function createWithWebSearch(
+  anthropic: Anthropic,
+  params: Anthropic.MessageCreateParamsNonStreaming
+): Promise<Anthropic.Message> {
+  let messages = params.messages
+  let response = await anthropic.messages.create({ ...params, messages })
+  while (response.stop_reason === 'pause_turn') {
+    messages = [...messages, { role: 'assistant' as const, content: response.content }]
+    response = await anthropic.messages.create({ ...params, messages })
+  }
+  return response
+}
 
 export const CAREEROS_RULES = `You are CareerOS, a senior career coach for a Senior PM at Amazon (L6, Hyderabad) targeting Principal PM roles.
 
@@ -128,6 +161,19 @@ export function extractDomain(url: string): string {
     return hostname.replace(/^www\./, '')
   } catch {
     return url
+  }
+}
+
+// True for a constructed search-results page (youtube.com/results, google.com/search),
+// false for a real content URL (e.g. youtube.com/watch?v=..., a real article link) —
+// now that web_search can return real URLs, a bare domain check is no longer enough
+// to tell the two apart.
+export function isSearchResultsUrl(url: string): boolean {
+  try {
+    const { pathname } = new URL(url)
+    return pathname.startsWith('/results') || pathname.startsWith('/search')
+  } catch {
+    return false
   }
 }
 

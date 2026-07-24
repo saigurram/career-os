@@ -13,18 +13,18 @@ describe('HUMAN_MOCK_UNITS', () => {
     expect(HUMAN_MOCK_UNITS).toHaveLength(2)
   })
 
-  it('contains unit 26', () => {
-    expect(HUMAN_MOCK_UNITS).toContain(26)
+  it('contains unit 37', () => {
+    expect(HUMAN_MOCK_UNITS).toContain(37)
   })
 
-  it('contains unit 32', () => {
-    expect(HUMAN_MOCK_UNITS).toContain(32)
+  it('contains unit 45', () => {
+    expect(HUMAN_MOCK_UNITS).toContain(45)
   })
 
-  it('both entries are within valid curriculum range (1–34)', () => {
+  it('both entries are within valid curriculum range (1–48)', () => {
     for (const unit of HUMAN_MOCK_UNITS) {
       expect(unit).toBeGreaterThanOrEqual(1)
-      expect(unit).toBeLessThanOrEqual(34)
+      expect(unit).toBeLessThanOrEqual(48)
     }
   })
 })
@@ -32,48 +32,48 @@ describe('HUMAN_MOCK_UNITS', () => {
 // ─── isHumanMockUnit ──────────────────────────────────────────────────────────
 
 describe('isHumanMockUnit', () => {
-  it('returns true for unit 26', () => {
-    expect(isHumanMockUnit(26)).toBe(true)
+  it('returns true for unit 37', () => {
+    expect(isHumanMockUnit(37)).toBe(true)
   })
 
-  it('returns true for unit 32', () => {
-    expect(isHumanMockUnit(32)).toBe(true)
+  it('returns true for unit 45', () => {
+    expect(isHumanMockUnit(45)).toBe(true)
   })
 
   it('returns false for unit 1', () => {
     expect(isHumanMockUnit(1)).toBe(false)
   })
 
-  it('returns false for unit 34', () => {
-    expect(isHumanMockUnit(34)).toBe(false)
+  it('returns false for unit 48', () => {
+    expect(isHumanMockUnit(48)).toBe(false)
   })
 
-  it('returns false for unit 25 (one before first mock)', () => {
-    expect(isHumanMockUnit(25)).toBe(false)
+  it('returns false for unit 36 (one before first mock)', () => {
+    expect(isHumanMockUnit(36)).toBe(false)
   })
 
-  it('returns false for unit 27 (one after first mock)', () => {
-    expect(isHumanMockUnit(27)).toBe(false)
+  it('returns false for unit 38 (one after first mock)', () => {
+    expect(isHumanMockUnit(38)).toBe(false)
   })
 
-  it('returns false for unit 31 (one before second mock)', () => {
-    expect(isHumanMockUnit(31)).toBe(false)
+  it('returns false for unit 44 (one before second mock)', () => {
+    expect(isHumanMockUnit(44)).toBe(false)
   })
 
-  it('returns false for unit 33 (one after second mock)', () => {
-    expect(isHumanMockUnit(33)).toBe(false)
+  it('returns false for unit 46 (one after second mock)', () => {
+    expect(isHumanMockUnit(46)).toBe(false)
   })
 
   it('returns false for unit 0 (out of range)', () => {
     expect(isHumanMockUnit(0)).toBe(false)
   })
 
-  it('returns false for unit 35 (past curriculum end)', () => {
-    expect(isHumanMockUnit(35)).toBe(false)
+  it('returns false for unit 49 (past curriculum end)', () => {
+    expect(isHumanMockUnit(49)).toBe(false)
   })
 
-  it('exactly 2 units in 1–34 range are human mock', () => {
-    const mockUnits = Array.from({ length: 34 }, (_, i) => i + 1).filter(isHumanMockUnit)
+  it('exactly 2 units in 1–48 range are human mock', () => {
+    const mockUnits = Array.from({ length: 48 }, (_, i) => i + 1).filter(isHumanMockUnit)
     expect(mockUnits).toHaveLength(2)
   })
 })

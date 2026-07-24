@@ -17,7 +17,7 @@ test.describe('Curriculum', () => {
   })
 
   test('shows curriculum units', async ({ page }) => {
-    // 34 units exist — assert at least the first is visible
+    // 48 units exist — assert at least the first is visible
     await expect(page.locator('[data-testid="curriculum-unit"]').first()).toBeVisible({ timeout: 10000 })
   })
 

@@ -2,8 +2,16 @@ import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import { parseGeneratedContent, getPillarForUnit } from '@/lib/claude'
+import { parseGeneratedContent, getPillarForUnit, extractFinalText, createWithWebSearch, WEB_SEARCH_TOOL } from '@/lib/claude'
 import { buildCurriculumGenerationPrompt, isContentStale, type GenerateTrigger, type ReplaceBecause, type CurriculumGenerationInputs } from '@/lib/curriculum'
+import { embedText, cosineSimilarity } from '@/lib/embeddings'
+
+const CONTENT_SIMILARITY_THRESHOLD = 0.85
+const MAX_CONTENT_RETRIES = 2
+
+function contentSimilarityText(content: { learn_resource_title: string; create_task: string; outreach_who: string }): string {
+  return `${content.learn_resource_title} ${content.create_task} ${content.outreach_who}`
+}
 
 export async function POST(request: Request) {
   try {
@@ -56,6 +64,7 @@ export async function POST(request: Request) {
       user_id: user.id,
       content: JSON.parse(JSON.stringify(existing)),
       replaced_because: replaceBecause,
+      embedding: existing.embedding ?? null,
     })
   }
 
@@ -72,6 +81,7 @@ export async function POST(request: Request) {
     { data: progressRows },
     { data: allUnits },
     { data: otherUnitContents },
+    { data: historyRows },
   ] = await Promise.all([
     admin.from('users')
       .select('current_level, current_company, target_level, target_location, offer_deadline, job_title')
@@ -125,8 +135,11 @@ export async function POST(request: Request) {
       .order('unit_number'),
 
     admin.from('curriculum_unit_content')
-      .select('unit_id, learn_resource_title, create_type, outreach_criteria, ai_concept_id')
+      .select('unit_id, learn_resource_title, create_type, outreach_criteria, ai_concept_id, embedding')
       .neq('unit_id', unit_id),
+
+    admin.from('curriculum_unit_content_history')
+      .select('embedding'),
   ])
 
   // ── Derive values from fetched data ─────────────────────────────────────────
@@ -184,6 +197,14 @@ export async function POST(request: Request) {
     return `Role: ${j.title} at ${j.company}${gaps ? ` | Gaps: ${gaps.slice(0, 100)}` : ''}`
   }).join('\n')
 
+  // Prior content embeddings — both currently-live content on other units and anything
+  // previously replaced (a "smart refresh" shouldn't regenerate something identical to a
+  // version from 3 refreshes ago just because it's no longer the live row).
+  const priorContentEmbeddings = [
+    ...(otherUnitContents ?? []).map(c => c.embedding as number[] | null),
+    ...(historyRows ?? []).map(h => h.embedding as number[] | null),
+  ].filter((e): e is number[] => Array.isArray(e) && e.length > 0)
+
   // ── Build prompt inputs ──────────────────────────────────────────────────────
   const pillar = getPillarForUnit(unit.unit_number)
   const promptInputs: CurriculumGenerationInputs = {
@@ -213,33 +234,66 @@ export async function POST(request: Request) {
 
   const { systemPrompt, userMessage } = buildCurriculumGenerationPrompt(promptInputs)
 
-  // ── Call Claude with prompt caching on the static system prompt ──────────────
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2000,
-    system: [
-      {
-        type: 'text' as const,
-        text: systemPrompt,
-        cache_control: { type: 'ephemeral' as const },
-      },
-    ],
-    messages: [{ role: 'user', content: userMessage }],
-  })
+  // ── Call Claude with prompt caching + web_search, retrying on embedding-similarity
+  // collisions against prior content (own or any other unit's) up to MAX_CONTENT_RETRIES ──
+  let content: ReturnType<typeof parseGeneratedContent> = null
+  let contentEmbedding: number[] | null = null
+  let flaggedNearDuplicate = false
+  let lastRawText = ''
+  let lastParseFailed = false
 
-  const rawText = response.content[0].type === 'text' ? response.content[0].text : '{}'
-  const text = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+  for (let attempt = 0; attempt <= MAX_CONTENT_RETRIES; attempt++) {
+    const response = await createWithWebSearch(anthropic, {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2000,
+      tools: [WEB_SEARCH_TOOL],
+      system: [
+        {
+          type: 'text' as const,
+          text: systemPrompt,
+          cache_control: { type: 'ephemeral' as const },
+        },
+      ],
+      messages: [{ role: 'user', content: userMessage }],
+    })
 
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return NextResponse.json({ error: 'Claude returned non-JSON output', raw: text.slice(0, 300) }, { status: 500 })
+    const rawText = extractFinalText(response.content)
+    lastRawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(lastRawText)
+      lastParseFailed = false
+    } catch {
+      lastParseFailed = true
+      continue
+    }
+
+    const candidate = parseGeneratedContent(parsed)
+    if (!candidate) continue
+
+    const candidateEmbedding = await embedText(contentSimilarityText(candidate))
+    const maxSimilarity = priorContentEmbeddings.reduce(
+      (max, prior) => Math.max(max, cosineSimilarity(candidateEmbedding, prior)),
+      0
+    )
+
+    if (maxSimilarity <= CONTENT_SIMILARITY_THRESHOLD || attempt === MAX_CONTENT_RETRIES) {
+      content = candidate
+      contentEmbedding = candidateEmbedding
+      flaggedNearDuplicate = maxSimilarity > CONTENT_SIMILARITY_THRESHOLD
+      break
+    }
   }
 
-  const content = parseGeneratedContent(parsed)
+  if (lastParseFailed && !content) {
+    return NextResponse.json({ error: 'Claude returned non-JSON output', raw: lastRawText.slice(0, 300) }, { status: 500 })
+  }
   if (!content) {
-    return NextResponse.json({ error: 'Invalid content shape from Claude', raw: text.slice(0, 300) }, { status: 500 })
+    return NextResponse.json({ error: 'Invalid content shape from Claude', raw: lastRawText.slice(0, 300) }, { status: 500 })
+  }
+  if (flaggedNearDuplicate) {
+    console.warn(`[curriculum/generate] accepting near-duplicate content for unit ${unit_id} after ${MAX_CONTENT_RETRIES} retries`)
   }
 
   // ── Persist ──────────────────────────────────────────────────────────────────
@@ -272,6 +326,7 @@ export async function POST(request: Request) {
       outreach_message_draft: content.outreach_message_draft,
       ai_concept_id: targetConcept?.id ?? null,
       reflect_question: content.reflect_question,
+      embedding: contentEmbedding,
     })
     .select('*')
     .single()

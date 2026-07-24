@@ -5,6 +5,7 @@ import {
   getDifficultyRangeForSession,
   parseGeneratedQuestion,
   filterAskedQuestions,
+  partitionByEmbeddingNovelty,
   buildQuestionPrompt,
   type QuestionCategory,
   type GeneratedQuestion,
@@ -235,6 +236,51 @@ describe('filterAskedQuestions', () => {
 
   it('handles empty candidates list', () => {
     expect(filterAskedQuestions([], ['some asked question'])).toHaveLength(0)
+  })
+})
+
+// ─── partitionByEmbeddingNovelty (authoritative second-pass dedup) ───────────
+
+describe('partitionByEmbeddingNovelty', () => {
+  it('treats a similarity at or below the threshold as novel', () => {
+    const { novel, nearDuplicate } = partitionByEmbeddingNovelty([
+      { text: 'Q1', maxSimilarity: 0.85 },
+    ])
+    expect(novel).toEqual(['Q1'])
+    expect(nearDuplicate).toEqual([])
+  })
+
+  it('flags a similarity above the threshold as a near duplicate', () => {
+    const { novel, nearDuplicate } = partitionByEmbeddingNovelty([
+      { text: 'Q1', maxSimilarity: 0.86 },
+    ])
+    expect(novel).toEqual([])
+    expect(nearDuplicate).toEqual(['Q1'])
+  })
+
+  it('respects a custom threshold', () => {
+    const { novel, nearDuplicate } = partitionByEmbeddingNovelty(
+      [{ text: 'Q1', maxSimilarity: 0.5 }],
+      0.4
+    )
+    expect(novel).toEqual([])
+    expect(nearDuplicate).toEqual(['Q1'])
+  })
+
+  it('partitions a mixed batch correctly', () => {
+    const { novel, nearDuplicate } = partitionByEmbeddingNovelty([
+      { text: 'Novel question', maxSimilarity: 0.2 },
+      { text: 'Duplicate question', maxSimilarity: 0.95 },
+      { text: 'Another novel one', maxSimilarity: 0.4 },
+    ])
+    expect(novel).toEqual(['Novel question', 'Another novel one'])
+    expect(nearDuplicate).toEqual(['Duplicate question'])
+  })
+
+  it('handles an empty input array', () => {
+    const { novel, nearDuplicate } = partitionByEmbeddingNovelty([])
+    expect(novel).toEqual([])
+    expect(nearDuplicate).toEqual([])
   })
 })
 

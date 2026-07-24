@@ -5,6 +5,8 @@ import {
   buildSystemPrompt,
   CURRICULUM_PILLARS,
   CAREEROS_RULES,
+  extractFinalText,
+  isSearchResultsUrl,
   type GeneratedUnitContent,
 } from '@/lib/claude'
 
@@ -49,13 +51,13 @@ describe('getPillarForUnit', () => {
     expect(getPillarForUnit(8)).toBe(CURRICULUM_PILLARS[1])
   })
 
-  it('unit 34 gets a valid pillar', () => {
-    const pillar = getPillarForUnit(34)
+  it('unit 48 gets a valid pillar', () => {
+    const pillar = getPillarForUnit(48)
     expect(CURRICULUM_PILLARS).toContain(pillar)
   })
 
   it('no two consecutive units share the same pillar', () => {
-    for (let i = 1; i < 34; i++) {
+    for (let i = 1; i < 48; i++) {
       const current = getPillarForUnit(i)
       const next = getPillarForUnit(i + 1)
       expect(current).not.toBe(next)
@@ -187,15 +189,65 @@ describe('CAREEROS_RULES', () => {
   })
 })
 
+describe('extractFinalText', () => {
+  it('returns the text of a plain single text block', () => {
+    const content = [{ type: 'text', text: '{"ok":true}' }] as never
+    expect(extractFinalText(content)).toBe('{"ok":true}')
+  })
+
+  it('returns the LAST text block when web_search tool blocks are interleaved', () => {
+    const content = [
+      { type: 'server_tool_use', id: 'srv1', name: 'web_search', input: {} },
+      { type: 'web_search_tool_result', tool_use_id: 'srv1', content: [] },
+      { type: 'text', text: 'intermediate reasoning, not the answer' },
+      { type: 'text', text: '{"final":"answer"}' },
+    ] as never
+    expect(extractFinalText(content)).toBe('{"final":"answer"}')
+  })
+
+  it('returns "{}" when there are no text blocks', () => {
+    const content = [
+      { type: 'server_tool_use', id: 'srv1', name: 'web_search', input: {} },
+    ] as never
+    expect(extractFinalText(content)).toBe('{}')
+  })
+
+  it('returns "{}" for an empty content array', () => {
+    expect(extractFinalText([])).toBe('{}')
+  })
+})
+
+describe('isSearchResultsUrl', () => {
+  it('is true for a YouTube search-results URL', () => {
+    expect(isSearchResultsUrl('https://www.youtube.com/results?search_query=llms')).toBe(true)
+  })
+
+  it('is true for a Google search URL', () => {
+    expect(isSearchResultsUrl('https://www.google.com/search?q=llms')).toBe(true)
+  })
+
+  it('is false for a real YouTube video URL', () => {
+    expect(isSearchResultsUrl('https://www.youtube.com/watch?v=abc123')).toBe(false)
+  })
+
+  it('is false for a real article URL', () => {
+    expect(isSearchResultsUrl('https://newsletter.pragmaticengineer.com/p/some-post')).toBe(false)
+  })
+
+  it('is false for an unparseable URL', () => {
+    expect(isSearchResultsUrl('not-a-url')).toBe(false)
+  })
+})
+
 describe('curriculum rotation completeness', () => {
-  it('all 6 pillars appear at least 5 times across 34 units', () => {
+  it('all 6 pillars appear exactly 8 times across 48 units', () => {
     const counts: Record<string, number> = {}
-    for (let i = 1; i <= 34; i++) {
+    for (let i = 1; i <= 48; i++) {
       const pillar = getPillarForUnit(i)
       counts[pillar] = (counts[pillar] ?? 0) + 1
     }
     for (const pillar of CURRICULUM_PILLARS) {
-      expect(counts[pillar]).toBeGreaterThanOrEqual(5)
+      expect(counts[pillar]).toBe(8)
     }
   })
 
@@ -203,7 +255,7 @@ describe('curriculum rotation completeness', () => {
     for (const pillar of CURRICULUM_PILLARS) {
       let maxGap = 0
       let gap = 0
-      for (let i = 1; i <= 34; i++) {
+      for (let i = 1; i <= 48; i++) {
         if (getPillarForUnit(i) !== pillar) {
           gap++
           maxGap = Math.max(maxGap, gap)

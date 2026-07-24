@@ -274,7 +274,7 @@ export function hasPersonaLpProbe(persona: InterviewPersona): boolean {
 
 // ─── Human mock milestones ────────────────────────────────────────────────────
 
-export const HUMAN_MOCK_UNITS = [26, 32] as const
+export const HUMAN_MOCK_UNITS = [37, 45] as const
 export type HumanMockUnitNumber = typeof HUMAN_MOCK_UNITS[number]
 
 export function isHumanMockUnit(unitNumber: number): boolean {

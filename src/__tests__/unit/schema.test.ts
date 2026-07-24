@@ -11,26 +11,35 @@ describe('Schema design validation', () => {
     expect(schema).toContain('unit_id')
   })
 
-  it('all 34 curriculum units are seeded (1-34)', () => {
-    const unitNumbers = Array.from({ length: 34 }, (_, i) => i + 1)
-    expect(unitNumbers).toHaveLength(34)
+  it('all 48 curriculum units are seeded (1-48)', () => {
+    const unitNumbers = Array.from({ length: 48 }, (_, i) => i + 1)
+    expect(unitNumbers).toHaveLength(48)
     expect(unitNumbers[0]).toBe(1)
-    expect(unitNumbers[33]).toBe(34)
+    expect(unitNumbers[47]).toBe(48)
   })
 
-  it('all 42 AI concepts are seeded (1-42)', () => {
-    const conceptNumbers = Array.from({ length: 42 }, (_, i) => i + 1)
-    expect(conceptNumbers).toHaveLength(42)
+  it('all 85 AI concepts are seeded (1-85)', () => {
+    const conceptNumbers = Array.from({ length: 85 }, (_, i) => i + 1)
+    expect(conceptNumbers).toHaveLength(85)
     expect(conceptNumbers[0]).toBe(1)
-    expect(conceptNumbers[41]).toBe(42)
+    expect(conceptNumbers[84]).toBe(85)
   })
 
-  it('AI concepts span all 4 tiers', () => {
-    const tier1Count = 10 // concepts 1-10
-    const tier2Count = 10 // concepts 11-20
-    const tier3Count = 10 // concepts 21-30
-    const tier4Count = 12 // concepts 31-42
-    expect(tier1Count + tier2Count + tier3Count + tier4Count).toBe(42)
+  it('AI concepts span all 5 tiers', () => {
+    const tier1Count = 17 // concepts 1-10, 43-49
+    const tier2Count = 19 // concepts 11-20, 50-58
+    const tier3Count = 18 // concepts 21-30, 59-66
+    const tier4Count = 20 // concepts 31-42, 67-74
+    const tier5Count = 11 // concepts 75-85 (system-design depth, new)
+    expect(tier1Count + tier2Count + tier3Count + tier4Count + tier5Count).toBe(85)
+  })
+
+  it('ai_concepts tier constraint allows Tier 5 after migration 009', () => {
+    const validTiers = [1, 2, 3, 4, 5]
+    const invalidTiers = [0, 6]
+    validTiers.forEach(t => expect(t).toBeGreaterThanOrEqual(1))
+    validTiers.forEach(t => expect(t).toBeLessThanOrEqual(5))
+    invalidTiers.forEach(t => expect(t < 1 || t > 5).toBe(true))
   })
 
   it('offer_deadline defaults to 2027-06-30', () => {

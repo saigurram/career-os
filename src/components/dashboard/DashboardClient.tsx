@@ -141,8 +141,8 @@ export default function DashboardClient({
 
   const tasksDoneThisUnit = tasks.filter(t => currentProgress?.[t.key]).length
   const unitPct = Math.round((tasksDoneThisUnit / 4) * 100)
-  const totalPct = Math.round((doneUnits / 34) * 100)
-  const conceptPct = Math.round((coveredCount / 42) * 100)
+  const totalPct = Math.round((doneUnits / 48) * 100)
+  const conceptPct = Math.round((coveredCount / 85) * 100)
   const daysPerTask = remainingTasks > 0 && daysToEnd > 0
     ? (daysToEnd / remainingTasks).toFixed(1)
     : null
@@ -352,10 +352,10 @@ export default function DashboardClient({
           <StatCard icon={<Flame className="text-orange-400" size={20} />} label="Day streak" value={streak} sub="consecutive days" accent="orange" />
         </motion.div>
         <motion.div variants={staggerItem}>
-          <StatCard icon={<BookOpen className="text-indigo-400" size={20} />} label="Units complete" value={`${doneUnits}/34`} sub={`${totalPct}% done`} accent="indigo" />
+          <StatCard icon={<BookOpen className="text-indigo-400" size={20} />} label="Units complete" value={`${doneUnits}/48`} sub={`${totalPct}% done`} accent="indigo" />
         </motion.div>
         <motion.div variants={staggerItem}>
-          <StatCard icon={<TrendingUp className="text-violet-400" size={20} />} label="AI concepts" value={`${coveredCount}/42`} sub={`${conceptPct}% covered`} accent="violet" />
+          <StatCard icon={<TrendingUp className="text-violet-400" size={20} />} label="AI concepts" value={`${coveredCount}/85`} sub={`${conceptPct}% covered`} accent="violet" />
         </motion.div>
         <motion.div variants={staggerItem}>
           <StatCard icon={<Award className="text-emerald-400" size={20} />} label="Portfolio" value={artifacts.filter(a => a.published_at).length} sub={`${artifacts.length} total artifacts`} accent="emerald" />
@@ -370,7 +370,7 @@ export default function DashboardClient({
             <div className="flex items-start justify-between mb-4">
               <div>
                 <Badge variant="secondary" className="mb-2 text-xs bg-indigo-500/10 text-indigo-300 border-indigo-500/20">
-                  Unit {currentUnit?.unit_number} of 34
+                  Unit {currentUnit?.unit_number} of 48
                 </Badge>
                 <h2 className="text-lg font-semibold text-white">{currentUnit?.primary_theme}</h2>
                 <p className="text-sm text-muted-foreground mt-0.5">{tasksDoneThisUnit} of 4 tasks done this week</p>
@@ -447,16 +447,16 @@ export default function DashboardClient({
           <GlassCard className="flex flex-col items-center py-6">
             <p className="text-sm text-muted-foreground mb-4">Overall progress</p>
             <ProgressRing value={totalPct} size={160} strokeWidth={12} />
-            <p className="mt-4 text-sm text-muted-foreground text-center">{doneUnits} of 34 units complete</p>
+            <p className="mt-4 text-sm text-muted-foreground text-center">{doneUnits} of 48 units complete</p>
           </GlassCard>
 
           <GlassCard>
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-medium text-white">AI concepts covered</p>
-              <span className="text-sm font-bold text-indigo-400">{coveredCount}/42</span>
+              <span className="text-sm font-bold text-indigo-400">{coveredCount}/85</span>
             </div>
             <Progress value={conceptPct} className="h-2 bg-white/5" />
-            <p className="text-xs text-muted-foreground mt-2">All 42 must be covered by unit 34</p>
+            <p className="text-xs text-muted-foreground mt-2">Concepts surface progressively as units unlock</p>
           </GlassCard>
 
           <GlassCard className="border-indigo-500/20 bg-gradient-to-br from-indigo-500/5 to-violet-500/5">

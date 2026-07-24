@@ -2,12 +2,15 @@ import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import { CAREEROS_RULES } from '@/lib/claude'
+import { CAREEROS_RULES, extractFinalText, createWithWebSearch, WEB_SEARCH_TOOL } from '@/lib/claude'
 import {
   getDifficultyRangeForSession,
   buildQuestionPrompt,
   parseGeneratedQuestion,
+  filterAskedQuestions,
+  partitionByEmbeddingNovelty,
   type CompanyTier,
+  type GeneratedQuestion,
 } from '@/lib/interview-questions'
 import {
   shouldRegeneratePlaybook,
@@ -15,10 +18,21 @@ import {
   parseGeneratedPlaybook,
   getCompanyEntry,
 } from '@/lib/company-playbooks'
+import { embedBatch, cosineSimilarity } from '@/lib/embeddings'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+const TARGET_QUESTION_COUNT = 5
+const REQUEST_QUESTION_COUNT = 8 // ask for extra candidates so novelty filtering doesn't leave us short
+const MAX_QUESTION_RETRIES = 2
+const EMBEDDING_SIMILARITY_THRESHOLD = 0.85
+const DO_NOT_REPEAT_PROMPT_LIMIT = 50 // cap the in-prompt hint list; the actual dedup check below covers full history
+
 export async function POST(request: Request) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 })
+  }
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -60,25 +74,22 @@ export async function POST(request: Request) {
     .eq('company', company)
 
   const sessionCount = (priorSessionCount ?? 0) + 1
-  const isGauntlet = sessionCount > 30 // Unit 34 trigger handled by caller
+  const isGauntlet = sessionCount > 30 // Late-program gauntlet mode, triggered by caller near the end of the unit sequence
   const difficultyRange = getDifficultyRangeForSession(sessionCount, isGauntlet)
 
-  // Get previously asked questions for this company (dedup across all sessions)
-  const { data: prevSessions } = await admin
-    .from('interview_sessions')
-    .select('id')
+  // Prior questions for this user ACROSS ALL COMPANIES (not just this one) — concepts
+  // overlap across Amazon/Microsoft/Google loops even when phrasing differs, so the
+  // never-repeat guarantee needs to check the user's full question history, not just
+  // this company's.
+  const { data: priorQuestionRows } = await admin
+    .from('interview_questions')
+    .select('question_text, embedding')
     .eq('user_id', user.id)
-    .eq('company', company)
 
-  const prevSessionIds = (prevSessions ?? []).map(s => s.id)
-  let askedQuestions: string[] = []
-  if (prevSessionIds.length > 0) {
-    const { data: prevQuestions } = await admin
-      .from('interview_questions')
-      .select('question_text')
-      .in('session_id', prevSessionIds)
-    askedQuestions = (prevQuestions ?? []).map(q => q.question_text)
-  }
+  const priorAskedTexts = (priorQuestionRows ?? []).map(q => q.question_text)
+  const priorEmbeddings = (priorQuestionRows ?? [])
+    .map(q => q.embedding as number[] | null)
+    .filter((e): e is number[] => Array.isArray(e) && e.length > 0)
 
   // Fetch optional JD text
   let jdText: string | null = null
@@ -98,18 +109,21 @@ export async function POST(request: Request) {
     .single()
 
   if (!existingPlaybook || shouldRegeneratePlaybook(existingPlaybook.generated_at)) {
-    // Generate playbook via Claude
+    // Generate playbook via Claude, grounded in live web search (last-90-days interview
+    // experience reports etc). Cost is naturally bounded to once per company per month by
+    // the shouldRegeneratePlaybook TTL check above.
     const userBackground = `Senior PM at Amazon (L6, Hyderabad, Transportation Services). Targeting Principal PM roles in Hyderabad by June 2027.`
     const playbookPrompt = buildPlaybookPrompt(company, tier, userBackground)
 
     try {
-      const playbookResponse = await anthropic.messages.create({
+      const playbookResponse = await createWithWebSearch(anthropic, {
         model: 'claude-sonnet-4-6',
         max_tokens: 1200,
+        tools: [WEB_SEARCH_TOOL],
         system: [{ type: 'text' as const, text: CAREEROS_RULES, cache_control: { type: 'ephemeral' as const } }],
         messages: [{ role: 'user', content: playbookPrompt }],
       })
-      const playbookText = playbookResponse.content[0].type === 'text' ? playbookResponse.content[0].text : '{}'
+      const playbookText = extractFinalText(playbookResponse.content)
       const parsedPlaybook = parseGeneratedPlaybook(JSON.parse(playbookText))
       if (parsedPlaybook) {
         await admin.from('company_playbooks').upsert({
@@ -150,45 +164,115 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to create session' }, { status: 500 })
   }
 
-  // Generate first batch of questions (5 questions)
-  const questionPrompt = buildQuestionPrompt({
-    company,
-    tier,
-    roundType: round_type,
-    difficultyRange,
-    userAnswerHistory: [],
-    jdText,
-    skillGaps,
-    askedQuestions,
-    persona,
-    count: 5,
-  })
+  // ── Generate questions with lexical + embedding novelty checks ──────────────
+  // Lexical filter runs first (cheap, in-process). Embedding similarity is the
+  // authoritative second pass, catching paraphrases the word-overlap check misses.
+  // Up to MAX_QUESTION_RETRIES regenerations; anything still colliding after that is
+  // accepted but flagged rather than leaving the session short of questions.
+  let acceptedQuestions: GeneratedQuestion[] = []
+  const nearDuplicatePool: GeneratedQuestion[] = []
 
-  const qResponse = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 800,
-    system: [{ type: 'text' as const, text: CAREEROS_RULES, cache_control: { type: 'ephemeral' as const } }],
-    messages: [{ role: 'user', content: questionPrompt }],
-  })
+  for (
+    let attempt = 0;
+    attempt <= MAX_QUESTION_RETRIES && acceptedQuestions.length < TARGET_QUESTION_COUNT;
+    attempt++
+  ) {
+    const alreadyAcceptedTexts = acceptedQuestions.map(q => q.question_text)
+    const askedForDedup = [...priorAskedTexts, ...alreadyAcceptedTexts]
+    const askedForPrompt = askedForDedup.slice(-DO_NOT_REPEAT_PROMPT_LIMIT)
 
-  const qText = qResponse.content[0].type === 'text' ? qResponse.content[0].text : '[]'
-  const rawQuestions = JSON.parse(qText)
-  const questions = Array.isArray(rawQuestions)
-    ? rawQuestions.map(parseGeneratedQuestion).filter(Boolean)
-    : []
+    const questionPrompt = buildQuestionPrompt({
+      company,
+      tier,
+      roundType: round_type,
+      difficultyRange,
+      userAnswerHistory: [],
+      jdText,
+      skillGaps,
+      askedQuestions: askedForPrompt,
+      persona,
+      count: REQUEST_QUESTION_COUNT,
+    })
 
-  // Save generated questions for future dedup
+    const qResponse = await createWithWebSearch(anthropic, {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1200,
+      tools: [WEB_SEARCH_TOOL],
+      system: [{ type: 'text' as const, text: CAREEROS_RULES, cache_control: { type: 'ephemeral' as const } }],
+      messages: [{ role: 'user', content: questionPrompt }],
+    })
+
+    const qText = extractFinalText(qResponse.content)
+    let rawQuestions: unknown
+    try {
+      rawQuestions = JSON.parse(qText)
+    } catch {
+      rawQuestions = []
+    }
+    const candidates = Array.isArray(rawQuestions)
+      ? rawQuestions.map(parseGeneratedQuestion).filter((q): q is GeneratedQuestion => q !== null)
+      : []
+
+    if (candidates.length === 0) continue
+
+    // Lexical pass
+    const candidateTexts = candidates.map(c => c.question_text)
+    const lexicalSurvivorTexts = new Set(filterAskedQuestions(candidateTexts, askedForDedup))
+    const lexicalSurvivors = candidates.filter(c => lexicalSurvivorTexts.has(c.question_text))
+
+    if (lexicalSurvivors.length === 0) continue
+
+    // Embedding pass — compare each survivor against every prior embedding for this user
+    const survivorEmbeddings = await embedBatch(lexicalSurvivors.map(c => c.question_text))
+    const similarityResults = lexicalSurvivors.map((c, i) => ({
+      text: c.question_text,
+      maxSimilarity: priorEmbeddings.reduce(
+        (max, priorEmb) => Math.max(max, cosineSimilarity(survivorEmbeddings[i], priorEmb)),
+        0
+      ),
+    }))
+    const { novel, nearDuplicate } = partitionByEmbeddingNovelty(similarityResults, EMBEDDING_SIMILARITY_THRESHOLD)
+
+    const novelSet = new Set(novel)
+    const nearDupSet = new Set(nearDuplicate)
+    const novelQuestions = lexicalSurvivors.filter(c => novelSet.has(c.question_text))
+    const nearDupQuestions = lexicalSurvivors.filter(c => nearDupSet.has(c.question_text))
+
+    acceptedQuestions = [...acceptedQuestions, ...novelQuestions].slice(0, TARGET_QUESTION_COUNT)
+    nearDuplicatePool.push(...nearDupQuestions)
+  }
+
+  // Still short after retries — accept the best-available near-duplicates rather than
+  // leaving the session with fewer than TARGET_QUESTION_COUNT questions, but flag them.
+  if (acceptedQuestions.length < TARGET_QUESTION_COUNT && nearDuplicatePool.length > 0) {
+    const stillNeeded = TARGET_QUESTION_COUNT - acceptedQuestions.length
+    const flagged = nearDuplicatePool.slice(0, stillNeeded).map(q => ({
+      ...q,
+      tags: [...q.tags, 'near_duplicate_accepted'],
+    }))
+    console.warn(
+      `[interview/start] accepting ${flagged.length} near-duplicate question(s) after ${MAX_QUESTION_RETRIES} retries for user ${user.id}`
+    )
+    acceptedQuestions = [...acceptedQuestions, ...flagged]
+  }
+
+  const questions = acceptedQuestions
+
+  // Save generated questions for future dedup, including their embeddings
   if (questions.length > 0) {
+    const questionEmbeddings = await embedBatch(questions.map(q => q.question_text))
     await admin.from('interview_questions').insert(
-      questions.map(q => ({
+      questions.map((q, i) => ({
         session_id: session.id,
+        user_id: user.id,
         company,
         tier,
-        category: q!.category,
-        question_text: q!.question_text,
-        difficulty: q!.difficulty,
-        lp_map: q!.lp_map,
-        tags: q!.tags,
+        category: q.category,
+        question_text: q.question_text,
+        difficulty: q.difficulty,
+        lp_map: q.lp_map,
+        tags: q.tags,
+        embedding: questionEmbeddings[i],
       }))
     )
   }
@@ -202,9 +286,9 @@ export async function POST(request: Request) {
     difficulty_range: difficultyRange,
     session_number: sessionCount,
     questions: questions.map(q => ({
-      question_text: q!.question_text,
-      category: q!.category,
-      difficulty: q!.difficulty,
+      question_text: q.question_text,
+      category: q.category,
+      difficulty: q.difficulty,
     })),
     first_question: questions[0]?.question_text ?? null,
   })

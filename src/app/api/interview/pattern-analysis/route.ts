@@ -5,13 +5,17 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { CAREEROS_RULES } from '@/lib/claude'
 import { parsePatternAnalysis } from '@/lib/interview'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_AI_KEY ?? process.env.ANTHROPIC_API_KEY ?? '' })
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 const PATTERN_SYSTEM = `${CAREEROS_RULES}
 
 You are analyzing interview session patterns for a senior PM candidate. Identify the single most important recurring issue across multiple sessions. Respond with valid JSON only. No markdown. No extra keys.`
 
 export async function POST(request: Request) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 })
+  }
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

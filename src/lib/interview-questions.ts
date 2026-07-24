@@ -83,6 +83,30 @@ export function filterAskedQuestions(
   )
 }
 
+// ─── Embedding-based novelty check (authoritative second pass) ───────────────
+// The lexical filter above catches near-identical phrasing; this catches paraphrases
+// (same question, reworded) that share little word overlap but mean the same thing.
+// Callers run the lexical filter first, then compute each survivor's max cosine
+// similarity against all prior embeddings and pass the results here.
+
+export interface QuestionSimilarityResult {
+  text: string
+  maxSimilarity: number
+}
+
+export function partitionByEmbeddingNovelty(
+  results: QuestionSimilarityResult[],
+  threshold = 0.85
+): { novel: string[]; nearDuplicate: string[] } {
+  const novel: string[] = []
+  const nearDuplicate: string[] = []
+  for (const r of results) {
+    if (r.maxSimilarity > threshold) nearDuplicate.push(r.text)
+    else novel.push(r.text)
+  }
+  return { novel, nearDuplicate }
+}
+
 // ─── Prompt builder ───────────────────────────────────────────────────────────
 
 export function buildQuestionPrompt(params: {

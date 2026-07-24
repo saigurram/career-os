@@ -153,11 +153,11 @@ export function buildCurriculumGenerationPrompt(
     .join(', ') || 'none identified'
 
   const difficultyLevel =
-    unitNumber <= 8
+    unitNumber <= 11
       ? 'ENTRY: plain language only, no jargon without definition, assume zero PM AI experience'
-      : unitNumber <= 16
+      : unitNumber <= 23
       ? 'INTERMEDIATE: can reference concepts from earlier units, build on what is known'
-      : unitNumber <= 26
+      : unitNumber <= 37
       ? 'ADVANCED: scenario-based, real trade-off decisions, interview-pressure framing'
       : 'EXPERT: frontier concepts, no hand-holding, Principal PM interview standard'
 
@@ -171,19 +171,26 @@ NO DASH RULE: ABSOLUTE
 Never use an em-dash or a hyphen as punctuation anywhere in your output. Not in outreach messages, not in learn text, not in task descriptions, not anywhere. Use commas, colons, or write two separate sentences instead. This rule has no exceptions.
 
 LEARN RESOURCE RULES:
-- This user learns best from VIDEO first, then reading
-- Priority order (try 1 first, fall back in order):
-  1. YouTube video 5-15 min. Search these channels first:
-     Fireship, Lenny's Podcast clips, A16Z podcast clips,
-     Google/Anthropic/OpenAI official product videos
-  2. Lenny's Podcast, specific named episode
-  3. Aakash Gupta Substack, specific named post (she follows him)
-  4. Pragmatic Engineer, specific named post
-  5. Anthropic/OpenAI/Google product blog, practical posts only
-- NEVER use: arxiv, research papers, textbooks, docs pages, anything requiring engineering background to understand
-- NEVER fabricate direct URLs. Claude does not know which YouTube video IDs are real. Instead always use search URLs:
+- This user learns best from VIDEO first, then reading. Default to video.
+- You have a web_search tool available. Before choosing a learn resource, search for real,
+  current videos on the AI concept for this unit. Do not limit search to any fixed list of
+  channels or creators, since new and better sources appear constantly. Instead judge
+  candidates on:
+  1. Track record: prefer a channel with multiple relevant prior uploads on this kind of
+     topic, not a single one-off video
+  2. Recency: prefer content from the last ~18 months; flag anything older for review
+     since AI PM content dates quickly
+  3. Content match: the video must actually teach this concept, not just match on
+     title or keywords
+- If web_search returns a real, verifiable video URL meeting the above, use that exact URL
+  in learn_resource_url
+- If no adequate video exists after searching, fall back to a real article URL from search
+  results (same track-record and recency judgment applies)
+- Only construct a search-results URL (not a specific piece of content) as a last resort, if
+  web_search itself returns nothing usable:
   YouTube: https://www.youtube.com/results?search_query=YOUR+TERMS
   Articles: https://www.google.com/search?q=TITLE+AUTHOR+SITE
+- NEVER use: arxiv, research papers, textbooks, docs pages, anything requiring engineering background to understand
 - Resource must be under 15 minutes to consume
 - If it takes a PhD to understand, it is wrong
 
@@ -278,7 +285,7 @@ Respond ONLY with valid JSON. No markdown. No extra keys. No truncation. Every f
 }`
 
   // ── DYNAMIC USER MESSAGE (fresh every call — pulled from Supabase) ──────────
-  const userMessage = `Generate Unit ${unitNumber} of 34 curriculum content.
+  const userMessage = `Generate Unit ${unitNumber} of 48 curriculum content.
 
 USER PROFILE (live from database):
 Role: ${currentRole} (${currentLevel}) at Amazon Transportation
@@ -295,7 +302,7 @@ Published proof-of-work: ${publishedArtifactTitles.length > 0 ? publishedArtifac
 AI concepts still uncovered: ${uncoveredConceptNames.slice(0, 5).join(', ') || 'none'}
 
 UNIT DETAILS:
-Unit: ${unitNumber}/34
+Unit: ${unitNumber}/48
 Pillar: ${pillar}
 Theme: ${unitTheme}
 AI concept to teach: ${aiConceptName} (Tier ${aiConceptTier})

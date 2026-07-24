@@ -105,10 +105,10 @@ export default function SkillGapClient({ skillScores, jobs, coveredCount, uncove
               <Brain size={15} className="text-violet-400" />
               <p className="text-xs text-muted-foreground">AI Concepts</p>
             </div>
-            <p className="text-5xl font-bold text-violet-400">{coveredCount}<span className="text-xl text-muted-foreground">/42</span></p>
+            <p className="text-5xl font-bold text-violet-400">{coveredCount}<span className="text-xl text-muted-foreground">/85</span></p>
             <p className="text-xs text-muted-foreground mt-1">concepts covered</p>
             <div className="mt-3 pt-3 border-t border-white/8">
-              <p className="text-xs text-muted-foreground">{uncoveredCount} remaining to cover by unit 34</p>
+              <p className="text-xs text-muted-foreground">{uncoveredCount} concepts remaining to surface</p>
             </div>
           </GlassCard>
         </motion.div>

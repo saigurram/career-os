@@ -20,11 +20,11 @@ interface Props {
 
 export default function PhaseTransitionBanner({ stats, onEnterPhase2 }: Props) {
   const statItems = [
-    { label: 'Units completed', value: stats.unitsCompleted, max: 34 },
-    { label: 'Artifacts published', value: stats.artifactsPublished, max: 34 },
+    { label: 'Units completed', value: stats.unitsCompleted, max: 48 },
+    { label: 'Artifacts published', value: stats.artifactsPublished, max: 48 },
     { label: 'Stories banked', value: stats.storiesBanked, max: null },
     { label: 'Outreach contacts', value: stats.outreachContacts, max: null },
-    { label: 'AI concepts covered', value: stats.aiConceptsCovered, max: 42 },
+    { label: 'AI concepts covered', value: stats.aiConceptsCovered, max: 85 },
   ]
 
   return (
